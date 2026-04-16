@@ -65,32 +65,41 @@ class ConfidenceRouter:
         Returns:
             RoutingDecision with routing action and metadata
         """
-        # TODO 12: Implement routing logic
-        #
         # 1. Check if action_type is in HIGH_RISK_ACTIONS
-        #    -> If yes: always escalate (action="escalate", priority="high",
-        #       requires_human=True, reason="High-risk action: {action_type}")
-        #
-        # 2. Check confidence thresholds:
-        #    - confidence >= 0.9:
-        #      action="auto_send", priority="low",
-        #      requires_human=False, reason="High confidence"
-        #
-        #    - 0.7 <= confidence < 0.9:
-        #      action="queue_review", priority="normal",
-        #      requires_human=True, reason="Medium confidence — needs review"
-        #
-        #    - confidence < 0.7:
-        #      action="escalate", priority="high",
-        #      requires_human=True, reason="Low confidence — escalating"
+        if action_type in HIGH_RISK_ACTIONS:
+            return RoutingDecision(
+                action="escalate",
+                confidence=confidence,
+                reason=f"High-risk action: {action_type}",
+                priority="high",
+                requires_human=True,
+            )
 
-        return RoutingDecision(
-            action="auto_send",
-            confidence=confidence,
-            reason="TODO: implement routing logic",
-            priority="low",
-            requires_human=False,
-        )  # TODO: Replace with implementation
+        # 2. Check confidence thresholds
+        if confidence >= self.HIGH_THRESHOLD:
+            return RoutingDecision(
+                action="auto_send",
+                confidence=confidence,
+                reason="High confidence - auto-send allowed",
+                priority="low",
+                requires_human=False,
+            )
+        elif confidence >= self.MEDIUM_THRESHOLD:
+            return RoutingDecision(
+                action="queue_review",
+                confidence=confidence,
+                reason="Medium confidence - needs human review",
+                priority="normal",
+                requires_human=True,
+            )
+        else:
+            return RoutingDecision(
+                action="escalate",
+                confidence=confidence,
+                reason="Low confidence - escalating to human",
+                priority="high",
+                requires_human=True,
+            )
 
 
 # ============================================================
@@ -109,27 +118,27 @@ class ConfidenceRouter:
 hitl_decision_points = [
     {
         "id": 1,
-        "name": "TODO: Name this decision point",
-        "trigger": "TODO: When does this trigger?",
-        "hitl_model": "TODO: human-in-the-loop / human-on-the-loop / human-as-tiebreaker",
-        "context_needed": "TODO: What does the reviewer need to see?",
-        "example": "TODO: Give a concrete example scenario",
+        "name": "Large Financial Transaction Approval",
+        "trigger": "When user requests a transfer or payment > 50,000,000 VND (~$2,000 USD)",
+        "hitl_model": "human-in-the-loop",
+        "context_needed": "User transaction history, account balance, recipient verification, average transaction size, time of day, device/location anomaly score",
+        "example": "Customer asks to transfer 100,000,000 VND to an unknown third-party account at 3am from a new device. Agent should queue for human review because: (1) amount is large, (2) recipient is new, (3) unusual time, (4) new device.",
     },
     {
         "id": 2,
-        "name": "TODO: Name this decision point",
-        "trigger": "TODO: When does this trigger?",
-        "hitl_model": "TODO: human-in-the-loop / human-on-the-loop / human-as-tiebreaker",
-        "context_needed": "TODO: What does the reviewer need to see?",
-        "example": "TODO: Give a concrete example scenario",
+        "name": "Personal Information Update",
+        "trigger": "When user requests changes to personal details: address, phone, email, or requests account closure/deletion",
+        "hitl_model": "human-on-the-loop",
+        "context_needed": "Change history (what changed, when), identity verification status, reason for change, pending tickets or flags on account",
+        "example": "Customer requests to change their registered phone number to a new number. Before confirming, queue for human review to verify identity and ensure no fraudulent account takeover.",
     },
     {
         "id": 3,
-        "name": "TODO: Name this decision point",
-        "trigger": "TODO: When does this trigger?",
-        "hitl_model": "TODO: human-in-the-loop / human-on-the-loop / human-as-tiebreaker",
-        "context_needed": "TODO: What does the reviewer need to see?",
-        "example": "TODO: Give a concrete example scenario",
+        "name": "Disputed Transaction Resolution",
+        "trigger": "When user disputes a transaction, reports fraud, or requests chargeback",
+        "hitl_model": "human-as-tiebreaker",
+        "context_needed": "Transaction details, dispute history, account age, previous fraud reports, merchant category, amount, timeline of events",
+        "example": "Customer disputes a 15,000,000 VND transaction claiming they never made it. Agent has 0.65 confidence (possible fraud vs customer error). Human reviewer needs full context to decide: is this fraud, friendly fraud, or merchant error?",
     },
 ]
 

@@ -39,14 +39,17 @@ def content_filter(response: str) -> dict:
     issues = []
     redacted = response
 
-    # PII patterns to check
+    # PII and secret patterns to check
     PII_PATTERNS = {
-        # TODO: Add regex patterns for:
-        # - VN phone number: r"0\d{9,10}"
-        # - Email: r"[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}"
-        # - National ID (CMND/CCCD): r"\b\d{9}\b|\b\d{12}\b"
-        # - API key pattern: r"sk-[a-zA-Z0-9-]+"
-        # - Password pattern: r"password\s*[:=]\s*\S+"
+        "phone_vn": r"\b0\d{9,10}\b",  # Vietnamese phone: 0901234567
+        "email": r"[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}",
+        "national_id_9": r"\b\d{9}\b",  # 9-digit ID (CMND)
+        "national_id_12": r"\b\d{12}\b",  # 12-digit ID (CCCD)
+        "api_key": r"sk-[a-zA-Z0-9-]{10,}",
+        "password": r"password\s*[:=]\s*\S+",
+        "secret_key": r"(api|secret|private)\s*key\s*[:=]\s*\S+",
+        "db_connection": r"[a-zA-Z0-9-]+\.internal",
+        "admin_password": r"admin\d{3}",
     }
 
     for name, pattern in PII_PATTERNS.items():
@@ -89,15 +92,12 @@ Respond with ONLY one word: SAFE or UNSAFE
 If UNSAFE, add a brief reason on the next line.
 """
 
-# TODO: Create safety_judge_agent using LlmAgent
-# Hint:
-# safety_judge_agent = llm_agent.LlmAgent(
-#     model="gemini-2.0-flash",
-#     name="safety_judge",
-#     instruction=SAFETY_JUDGE_INSTRUCTION,
-# )
-
-safety_judge_agent = None  # TODO: Replace with implementation
+# Create safety judge agent for LLM-as-Judge evaluation
+safety_judge_agent = llm_agent.LlmAgent(
+    model="gemini-2.5-flash-lite",
+    name="safety_judge",
+    instruction=SAFETY_JUDGE_INSTRUCTION,
+)
 judge_runner = None
 
 
@@ -172,16 +172,31 @@ class OutputGuardrailPlugin(base_plugin.BasePlugin):
         if not response_text:
             return llm_response
 
-        # TODO: Implement logic:
-        # 1. Call content_filter(response_text)
-        #    - If issues found: replace llm_response.content with redacted version
-        #    - Increment self.redacted_count
-        # 2. If use_llm_judge: call llm_safety_check(response_text)
-        #    - If unsafe: replace llm_response.content with a safe message
-        #    - Increment self.blocked_count
-        # 3. Return llm_response (possibly modified)
+        # 1. Check content filter - redact PII/secrets
+        filter_result = content_filter(response_text)
+        if not filter_result["safe"]:
+            self.redacted_count += 1
+            # Replace response with redacted version
+            if llm_response and llm_response.content:
+                llm_response.content.parts = [
+                    types.Part.from_text(text=filter_result["redacted"])
+                ]
 
-        return llm_response  # TODO: modify if needed
+        # 2. If enabled, use LLM judge for safety check
+        if self.use_llm_judge:
+            judge_result = await llm_safety_check(response_text)
+            if not judge_result["safe"]:
+                self.blocked_count += 1
+                # Replace with safe message
+                if llm_response and llm_response.content:
+                    llm_response.content.parts = [
+                        types.Part.from_text(
+                            text="I cannot provide that information as it may contain sensitive data. "
+                                 "How else can I help you with banking?"
+                        )
+                    ]
+
+        return llm_response
 
 
 # ============================================================
